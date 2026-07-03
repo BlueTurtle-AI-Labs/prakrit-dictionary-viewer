@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Prakrit Dictionary Engine — Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@400;600&family=Georgia&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --ink:#2b2b28;
+    --paper:#faf9f6;
+    --card:#fffdf9;
+    --line:#d8d4cb;
+    --accent:#6b5b45;
+    --accent-soft:#efe9df;
+    --danger:#9a4b3f;
+    --ok:#4b6b4b;
+    --muted:#8a8478;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"Georgia","Times New Roman",serif;
+    background:var(--paper);
+    color:var(--ink);
+    display:flex;
+    flex-direction:column;
+  }
+  header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 14px;
+    background:#fff;
+    border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+  }
+  header h1{
+    font-size:14px;
+    font-weight:normal;
+    letter-spacing:0.5px;
+    color:var(--accent);
+    margin:0 14px 0 0;
+    white-space:nowrap;
+  }
+  header h1 small{
+    display:block;
+    font-size:9px;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  button{
+    font-family:inherit;
+    font-size:13px;
+    background:#fff;
+    border:1px solid var(--line);
+    color:var(--ink);
+    padding:5px 10px;
+    border-radius:3px;
+    cursor:pointer;
+  }
+  button:hover:not(:disabled){background:var(--accent-soft);}
+  button:disabled{opacity:0.4;cursor:default;}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  button.primary:hover:not(:disabled){opacity:0.9;}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 4px;}
+  .pagebox{display:flex;align-items:center;gap:4px;font-size:13px;}
+  .pagebox input{
+    width:48px;font-family:inherit;font-size:13px;
+    border:1px solid var(--line);border-radius:3px;padding:4px;text-align:center;
+  }
+  select{
+    font-family:inherit;font-size:13px;
+    border:1px solid var(--line);border-radius:3px;padding:5px 6px;background:#fff;color:var(--ink);
+  }
+  .spacer{flex:1;}
+  #status{font-size:12px;color:var(--muted);white-space:nowrap;}
+  #jumpBox{width:140px;font-family:"Noto Serif Devanagari",serif;font-size:13px;border:1px solid var(--line);border-radius:3px;padding:5px 7px;}
+
+  main{
+    flex:1;
+    display:flex;
+    min-height:0;
+  }
+  .pane{
+    flex:1 1 50%;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    border-right:1px solid var(--line);
+  }
+  .pane:last-child{border-right:none;}
+  .pane-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--muted);
+    padding:6px 12px;
+    background:#f3f1ea;
+    border-bottom:1px solid var(--line);
+  }
+  .pane-head .fill{flex:1;}
+  .pane-head .book-tag{
+    font-size:11px;text-transform:none;letter-spacing:0;color:var(--accent);font-style:italic;
+  }
+
+  /* ---- Left: entry workspace ---- */
+  #entryWrap{
+    flex:1;
+    overflow-y:auto;
+    padding:24px 26px;
+  }
+  .placeholder{
+    display:flex;align-items:center;justify-content:center;
+    height:100%;color:#a39d8e;font-size:14px;text-align:center;padding:20px;
+  }
+  .word-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:26px 20px 20px;
+    text-align:center;
+    box-shadow:0 1px 3px rgba(0,0,0,0.05);
+    position:relative;
+  }
+  .delete-word-btn{
+    position:absolute;
+    top:10px;
+    right:10px;
+    font-size:11px;
+    padding:4px 9px;
+    color:var(--danger);
+    border-color:var(--line);
+    letter-spacing:0.3px;
+  }
+  .delete-word-btn:hover{
+    background:var(--danger);
+    color:#fff;
+    border-color:var(--danger);
+  }
+  .word-index{
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:14px;
+  }
+  .word-display{
+    font-family:"Noto Serif Devanagari",serif;
+    font-size:52px;
+    line-height:1.3;
+    color:var(--ink);
+    word-break:break-word;
+  }
+  .word-nav{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin-top:26px;
+  }
+  .word-nav button{padding:8px 16px;font-size:13px;}
+  .word-nav .goto{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  .word-nav .goto input{width:60px;text-align:center;font-family:inherit;border:1px solid var(--line);border-radius:3px;padding:5px;}
+
+  .occ-heading{
+    margin:28px 0 10px;
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--muted);
+    border-bottom:1px solid var(--line);
+    padding-bottom:6px;
+  }
+  .occ-row{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    margin-bottom:8px;
+    background:#fff;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .occ-row:hover{background:var(--accent-soft);}
+  .occ-row.active{
+    border-color:var(--accent);
+    background:var(--accent-soft);
+    box-shadow:inset 3px 0 0 var(--accent);
+  }
+  .occ-row-top{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .occ-row-top .fill{flex:1;}
+  .occ-row-top .book-loc{
+    font-style:italic;
+    color:var(--accent);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .occ-row-top .book-loc .loc{
+    font-style:normal;
+    color:var(--muted);
+    font-size:12px;
+    margin-left:6px;
+  }
+  .occ-row .pdf-dot{
+    width:7px;height:7px;border-radius:50%;background:var(--line);flex-shrink:0;
+  }
+  .occ-row .pdf-dot.ready{background:var(--ok);}
+  .occ-context{
+    font-family:"Noto Serif Devanagari",serif;
+    font-size:15px;
+    line-height:1.6;
+    color:var(--ink);
+    padding:4px 0 2px 13px;
+    border-left:2px solid var(--line);
+  }
+  .occ-row.active .occ-context{border-left-color:var(--accent);}
+  .occ-context.occ-context-empty{
+    font-family:"Georgia","Times New Roman",serif;
+    font-style:italic;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .occ-context .quick-tag-btn{
+    font-family:"Georgia","Times New Roman",serif;
+    font-style:normal;
+    font-size:11px;
+    padding:3px 8px;
+    margin-left:8px;
+    vertical-align:middle;
+  }
+  .occ-delete-btn{
+    flex-shrink:0;
+    font-size:11px;
+    line-height:1;
+    padding:4px 7px;
+    color:var(--muted);
+    border-color:var(--line);
+    background:transparent;
+  }
+  .occ-delete-btn:hover{
+    background:var(--danger);
+    color:#fff;
+    border-color:var(--danger);
+  }
+
+  /* ---- Right: pdf viewer (adapted from OCR tool) ---- */
+  #pdfViewport{
+    flex:1;
+    overflow:hidden;
+    background:#e8e6df;
+    cursor:grab;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:16px;
+    touch-action:none;
+    user-select:none;
+    position:relative;
+  }
+  #pdfViewport.grabbing{cursor:grabbing;}
+  #pdfSurface{
+    display:inline-block;
+    transform-origin:center center;
+    will-change:transform;
+  }
+  #pdfCanvas{
+    background:#fff;
+    box-shadow:0 1px 6px rgba(0,0,0,0.25);
+    display:block;
+    transform: translateZ(0);
+  }
+  #zoomLabel{font-size:12px;color:var(--muted);width:40px;text-align:center;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Prakrit Dictionary Engine<small>Entry &amp; Citation Review</small></h1>
+  <button id="openDictBtn">Open Dictionary JSON…</button>
+  <button id="saveDictBtn" class="primary" disabled>Save Dictionary</button>
+  <input id="jumpBox" list="wordList" placeholder="Jump to word…" autocomplete="off">
+  <datalist id="wordList"></datalist>
+  <div class="spacer"></div>
+  <span id="status"></span>
+</header>
+
+<main>
+  <div class="pane">
+    <div class="pane-head">Entry</div>
+    <div id="entryWrap"><div class="placeholder" id="entryPlaceholder">Open a dictionary JSON file to begin</div></div>
+  </div>
+  <div class="pane">
+    <div class="pane-head">
+      <span>Source PDF</span>
+      <span class="book-tag" id="bookTag"></span>
+      <div class="fill"></div>
+      <select id="bookSelect" disabled></select>
+      <button id="openPdfBtn" disabled>Load PDF for book…</button>
+      <button id="openTagBtn" disabled>Load Tag Data…</button>
+      <div class="sep"></div>
+      <button id="prevPageBtn" disabled>◀</button>
+      <div class="pagebox">
+        <input id="pageInput" type="number" min="1" value="1" disabled>
+        <span>/ <span id="totalPages">–</span></span>
+      </div>
+      <button id="nextPageBtn" disabled>▶</button>
+      <div class="sep"></div>
+      <button id="zoomOutBtn" disabled>–</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomInBtn" disabled>+</button>
+      <button id="zoomResetBtn" disabled>Fit</button>
+    </div>
+    <div id="pdfViewport"><div class="placeholder" id="pdfPlaceholder">Load a PDF for a book to view pages here</div></div>
+  </div>
+</main>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ================= dictionary state =================
+let dictData = null;        // { word: [ {book_name, location:{page_number,line_number,index}} ] }
+let words = [];             // sorted word list
+let currentWordIndex = -1;
+let currentOccIndex = 0;
+let dictFileHandle = null;  // File System Access handle, if supported/granted
+let dictDirty = false;      // true if edits (deletions) haven't been saved yet
+
+// bookName -> { pdfDoc, numPages }
+let booksPdf = new Map();
+let currentBook = null;     // book name currently shown in viewer
+let currentPage = 1;
+
+// bookName -> Map("page_line" -> context sentence)
+let tagsByBook = new Map();
+
+// ================= pdf viewer state (adapted) =================
+let renderScale = 1.4;
+let pendingScale = 1.4;
+let displayScale = 1;
+let renderTask = null;
+let panX = 0;
+let panY = 0;
+let pdfSurface = null;
+let zoomCommitTimeout = null;
+
+// ================= elements =================
+const el = id => document.getElementById(id);
+const openDictBtn = el('openDictBtn');
+const saveDictBtn = el('saveDictBtn');
+const jumpBox = el('jumpBox');
+const wordList = el('wordList');
+const statusEl = el('status');
+
+const entryWrap = el('entryWrap');
+
+const bookTag = el('bookTag');
+const bookSelect = el('bookSelect');
+const openPdfBtn = el('openPdfBtn');
+const openTagBtn = el('openTagBtn');
+const prevPageBtn = el('prevPageBtn');
+const nextPageBtn = el('nextPageBtn');
+const pageInput = el('pageInput');
+const totalPagesLabel = el('totalPages');
+const zoomInBtn = el('zoomInBtn');
+const zoomOutBtn = el('zoomOutBtn');
+const zoomResetBtn = el('zoomResetBtn');
+const zoomLabel = el('zoomLabel');
+const pdfViewport = el('pdfViewport');
+
+function updateStatus(msg, isError){
+  statusEl.textContent = msg;
+  statusEl.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+}
+
+// ================= dictionary loading =================
+function loadDictFromText(text){
+  const parsed = JSON.parse(text);
+  dictData = parsed;
+  words = Object.keys(dictData).sort((a,b) => a.localeCompare(b, 'hi'));
+  if (words.length === 0){
+    updateStatus('No entries found in that file.', true);
+    return false;
+  }
+  populateWordList();
+  populateBookSelect();
+  currentWordIndex = 0;
+  dictDirty = false;
+  saveDictBtn.disabled = true;
+  renderWord();
+  return true;
+}
+
+const dictInput = document.createElement('input');
+dictInput.type = 'file'; dictInput.accept = 'application/json,.json';
+dictInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  dictFileHandle = null; // plain <input> gives no writable handle
+  try {
+    const text = await file.text();
+    if (loadDictFromText(text)){
+      updateStatus(`Loaded ${words.length.toLocaleString()} entries (edits will download as a new file — your browser doesn't support in-place saving)`);
+    }
+  } catch(err){
+    updateStatus('Could not parse JSON: ' + err.message, true);
+  }
+});
+
+openDictBtn.addEventListener('click', async () => {
+  if (window.showOpenFilePicker){
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{description: 'JSON dictionary', accept: {'application/json': ['.json']}}]
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+      dictFileHandle = handle;
+      if (loadDictFromText(text)){
+        updateStatus(`Loaded ${words.length.toLocaleString()} entries — saves will write back to ${file.name}`);
+      }
+      return;
+    } catch(err){
+      if (err.name === 'AbortError') return;
+      // fall through to plain input on other errors
+    }
+  }
+  dictInput.click();
+});
+
+function markDictDirty(){
+  dictDirty = true;
+  saveDictBtn.disabled = false;
+  updateStatus('Unsaved changes to dictionary', false);
+}
+
+async function saveDictionary(){
+  if (!dictData) return;
+  const json = JSON.stringify(dictData, null, 2);
+  if (dictFileHandle){
+    try {
+      const writable = await dictFileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      dictDirty = false;
+      saveDictBtn.disabled = true;
+      updateStatus('Dictionary saved');
+    } catch(err){
+      updateStatus('Could not save file: ' + err.message, true);
+    }
+  } else {
+    const blob = new Blob([json], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'dictionary.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    dictDirty = false;
+    saveDictBtn.disabled = true;
+    updateStatus('Dictionary downloaded as dictionary.json');
+  }
+}
+saveDictBtn.addEventListener('click', saveDictionary);
+
+window.addEventListener('beforeunload', e => {
+  if (dictDirty){ e.preventDefault(); e.returnValue=''; }
+});
+
+function populateWordList(){
+  wordList.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const w of words){
+    const opt = document.createElement('option');
+    opt.value = w;
+    frag.appendChild(opt);
+  }
+  wordList.appendChild(frag);
+}
+
+function populateBookSelect(){
+  const books = new Set();
+  for (const w of words){
+    for (const occ of dictData[w]){
+      if (occ.book_name) books.add(occ.book_name);
+    }
+  }
+  bookSelect.innerHTML = '';
+  for (const b of [...books].sort()){
+    const opt = document.createElement('option');
+    opt.value = b; opt.textContent = b;
+    bookSelect.appendChild(opt);
+  }
+  bookSelect.disabled = books.size === 0;
+  openPdfBtn.disabled = books.size === 0;
+  openTagBtn.disabled = books.size === 0;
+}
+
+jumpBox.addEventListener('change', () => {
+  const idx = words.indexOf(jumpBox.value.trim());
+  if (idx === -1){
+    updateStatus(`"${jumpBox.value.trim()}" not found in dictionary`, true);
+    return;
+  }
+  currentWordIndex = idx;
+  renderWord();
+  jumpBox.value = '';
+});
+
+// ================= entry rendering =================
+function renderWord(){
+  if (currentWordIndex < 0 || currentWordIndex >= words.length) return;
+  const word = words[currentWordIndex];
+  const occurrences = dictData[word] || [];
+  currentOccIndex = 0;
+
+  entryWrap.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'word-card';
+  card.innerHTML = `
+    <button id="deleteWordBtn" class="delete-word-btn" title="Delete this entry from the dictionary">Delete entry</button>
+    <div class="word-index">Entry ${currentWordIndex + 1} of ${words.length}</div>
+    <div class="word-display">${escapeHtml(word)}</div>
+    <div class="word-nav">
+      <button id="prevWordBtn" ${currentWordIndex === 0 ? 'disabled' : ''}>◀ Previous</button>
+      <button id="randomWordBtn" ${words.length <= 1 ? 'disabled' : ''} title="Jump to a random entry">🎲 Random</button>
+      <span class="goto">#<input id="wordGoto" type="number" min="1" max="${words.length}" value="${currentWordIndex + 1}"></span>
+      <button id="nextWordBtn" ${currentWordIndex === words.length - 1 ? 'disabled' : ''}>Next ▶</button>
+    </div>
+    <div class="occ-heading">Occurrences (${occurrences.length})</div>
+    <div id="occList"></div>
+  `;
+  entryWrap.appendChild(card);
+
+  card.querySelector('#prevWordBtn').addEventListener('click', () => { currentWordIndex--; renderWord(); });
+  card.querySelector('#nextWordBtn').addEventListener('click', () => { currentWordIndex++; renderWord(); });
+  card.querySelector('#randomWordBtn').addEventListener('click', goToRandomWord);
+  card.querySelector('#deleteWordBtn').addEventListener('click', () => deleteCurrentWord(word));
+  card.querySelector('#wordGoto').addEventListener('change', (e) => {
+    let v = parseInt(e.target.value, 10);
+    if (isNaN(v)) return;
+    v = Math.min(words.length, Math.max(1, v));
+    currentWordIndex = v - 1;
+    renderWord();
+  });
+
+  const occList = card.querySelector('#occList');
+  if (occurrences.length === 0){
+    occList.innerHTML = `<div class="placeholder" style="height:auto;padding:16px;color:var(--muted);font-size:13px;">No occurrences remain for this entry.</div>`;
+  }
+  occurrences.forEach((occ, i) => {
+    const row = document.createElement('div');
+    row.className = 'occ-row' + (i === 0 ? ' active' : '');
+    const loc = occ.location || {};
+    const hasPdf = booksPdf.has(occ.book_name);
+    row.innerHTML = `
+      <div class="occ-row-top">
+        <span class="pdf-dot ${hasPdf ? 'ready' : ''}"></span>
+        <span class="book-loc">${escapeHtml(occ.book_name || 'Unknown')}<span class="loc">p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'} · idx ${loc.index ?? '–'}</span></span>
+        <div class="fill"></div>
+        <button class="occ-delete-btn" title="Delete this occurrence">✕</button>
+      </div>
+      <div class="occ-context"></div>
+    `;
+    applyContextMarkup(row.querySelector('.occ-context'), occ);
+    row.addEventListener('click', () => selectOccurrence(occ, i, occList));
+    row.querySelector('.occ-delete-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteOccurrence(word, i);
+    });
+    const quickBtn = row.querySelector('.quick-tag-btn');
+    if (quickBtn){
+      quickBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadTagDataForBook(quickBtn.dataset.book);
+      });
+    }
+    occList.appendChild(row);
+  });
+
+  if (occurrences.length){
+    selectOccurrence(occurrences[0], 0, occList);
+  } else {
+    showPdfPlaceholder('This entry has no recorded occurrences.');
+  }
+
+  jumpBox.value = '';
+}
+
+function applyContextMarkup(contextEl, occ){
+  const loc = occ.location || {};
+  const text = getContextText(occ.book_name, loc.page_number, loc.line_number);
+  if (text === undefined){
+    contextEl.classList.add('occ-context-empty');
+    contextEl.innerHTML = `Tag data not loaded for "${escapeHtml(occ.book_name || 'this book')}" — <button class="quick-tag-btn" data-book="${escapeHtml(occ.book_name || '')}">Load tag data…</button>`;
+    const btn = contextEl.querySelector('.quick-tag-btn');
+    if (btn){
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadTagDataForBook(btn.dataset.book);
+      });
+    }
+  } else if (text === null){
+    contextEl.classList.add('occ-context-empty');
+    contextEl.classList.remove('occ-context-filled');
+    contextEl.textContent = `No matching line found in the tag data for p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'}.`;
+  } else {
+    contextEl.classList.remove('occ-context-empty');
+    contextEl.textContent = text;
+  }
+}
+
+function selectOccurrence(occ, i, occList){
+  currentOccIndex = i;
+  [...occList.children].forEach((r, idx) => r.classList.toggle('active', idx === i));
+  const bookName = occ.book_name;
+  const pageNum = occ.location ? occ.location.page_number : null;
+  bookTag.textContent = bookName || '';
+
+  if (!booksPdf.has(bookName)){
+    showPdfPlaceholder(`PDF for "${bookName}" is not loaded yet.`, bookName);
+    return;
+  }
+  currentBook = bookName;
+  bookSelect.value = bookName;
+  const entry = booksPdf.get(bookName);
+  const target = Math.min(entry.numPages, Math.max(1, pageNum || 1));
+  goToPage(target);
+}
+
+function goToRandomWord(){
+  if (words.length <= 1) return;
+  let idx;
+  do { idx = Math.floor(Math.random() * words.length); } while (idx === currentWordIndex);
+  currentWordIndex = idx;
+  renderWord();
+}
+
+function deleteCurrentWord(word){
+  const count = (dictData[word] || []).length;
+  const ok = confirm(`Delete "${word}" and all ${count} occurrence(s) from the dictionary? This can't be undone unless you close without saving.`);
+  if (!ok) return;
+
+  delete dictData[word];
+  words.splice(currentWordIndex, 1);
+  markDictDirty();
+  populateWordList();
+  populateBookSelect();
+
+  if (words.length === 0){
+    entryWrap.innerHTML = '<div class="placeholder">All entries have been deleted.</div>';
+    showPdfPlaceholder('No entries remain.');
+    updateStatus(`Deleted "${word}" — the dictionary is now empty`);
+    return;
+  }
+  if (currentWordIndex >= words.length) currentWordIndex = words.length - 1;
+  updateStatus(`Deleted "${word}" — ${words.length.toLocaleString()} entries remain`);
+  renderWord();
+}
+
+function deleteOccurrence(word, occIndex){
+  const occurrences = dictData[word];
+  if (!occurrences || !occurrences[occIndex]) return;
+  occurrences.splice(occIndex, 1);
+  markDictDirty();
+  populateBookSelect();
+  updateStatus(`Removed occurrence — ${occurrences.length} remain for "${word}"`);
+  renderWord();
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ================= PDF loading per book =================
+const pdfInput = document.createElement('input');
+pdfInput.type = 'file'; pdfInput.accept = 'application/pdf';
+pdfInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const targetBook = bookSelect.value;
+  updateStatus(`Loading PDF for "${targetBook}"…`);
+  try {
+    const buf = await file.arrayBuffer();
+    const pdfDoc = await pdfjsLib.getDocument({data: buf}).promise;
+    booksPdf.set(targetBook, {pdfDoc, numPages: pdfDoc.numPages});
+    updateStatus(`Loaded PDF for "${targetBook}" (${pdfDoc.numPages} pages)`);
+    enableNavAndZoom();
+    // If this is the book of the currently active occurrence, jump straight there
+    const word = words[currentWordIndex];
+    const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
+    if (occ && occ.book_name === targetBook){
+      currentBook = targetBook;
+      const target = Math.min(pdfDoc.numPages, Math.max(1, occ.location ? occ.location.page_number : 1));
+      goToPage(target);
+    }
+    refreshOccList();
+  } catch(err){
+    updateStatus('Could not load PDF: ' + err.message, true);
+  }
+});
+openPdfBtn.addEventListener('click', () => {
+  if (!bookSelect.value){
+    updateStatus('No book selected.', true);
+    return;
+  }
+  pdfInput.click();
+});
+
+// ================= tag data (context sentences) loading =================
+// Expects lines like: [PAGE 0091, LINE 006] एण-खुर-खंडिआपंडु-जच्च-कच्चूर-चुण्णमुण्णमइ ।
+const TAG_LINE_RE = /\[\s*PAGE\s+(\d+)\s*,\s*LINE\s+(\d+)\s*\]\s*([^\r\n]*)/gi;
+
+const tagInput = document.createElement('input');
+tagInput.type = 'file'; tagInput.accept = 'text/plain,.txt';
+tagInput.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const targetBook = bookSelect.value;
+  updateStatus(`Loading tag data for "${targetBook}"…`);
+  try {
+    const text = await file.text();
+    const map = new Map();
+    let match;
+    TAG_LINE_RE.lastIndex = 0;
+    while ((match = TAG_LINE_RE.exec(text)) !== null){
+      const page = parseInt(match[1], 10);
+      const line = parseInt(match[2], 10);
+      const sentence = match[3].trim();
+      if (!isNaN(page) && !isNaN(line)){
+        map.set(`${page}_${line}`, sentence);
+      }
+    }
+    if (map.size === 0){
+      updateStatus(`No "[PAGE ####, LINE ####]" entries found in that file.`, true);
+      return;
+    }
+    tagsByBook.set(targetBook, map);
+    updateStatus(`Loaded tag data for "${targetBook}" (${map.size.toLocaleString()} lines)`);
+    refreshOccList();
+  } catch(err){
+    updateStatus('Could not read tag data file: ' + err.message, true);
+  }
+});
+openTagBtn.addEventListener('click', () => {
+  if (!bookSelect.value){
+    updateStatus('No book selected.', true);
+    return;
+  }
+  tagInput.click();
+});
+
+function loadTagDataForBook(bookName){
+  if (!bookName) return;
+  bookSelect.value = bookName;
+  tagInput.click();
+}
+
+// Returns: string (context found), null (tag data loaded but no match), or undefined (no tag data for this book yet)
+function getContextText(bookName, pageNum, lineNum){
+  const map = tagsByBook.get(bookName);
+  if (!map) return undefined;
+  const key = `${pageNum}_${lineNum}`;
+  return map.has(key) ? map.get(key) : null;
+}
+
+function refreshOccList(){
+  document.querySelectorAll('#occList .occ-row').forEach((row, i) => {
+    const word = words[currentWordIndex];
+    const occ = (dictData[word] || [])[i];
+    if (!occ) return;
+    const dot = row.querySelector('.pdf-dot');
+    if (dot) dot.classList.toggle('ready', booksPdf.has(occ.book_name));
+    const contextEl = row.querySelector('.occ-context');
+    if (contextEl) applyContextMarkup(contextEl, occ);
+  });
+}
+
+function enableNavAndZoom(){
+  prevPageBtn.disabled = false; nextPageBtn.disabled = false;
+  zoomInBtn.disabled = false; zoomOutBtn.disabled = false; zoomResetBtn.disabled = false;
+  pageInput.disabled = false;
+}
+
+// ================= PDF rendering (adapted from OCR tool) =================
+function showPdfPlaceholder(message, offerBook){
+  let extra = '';
+  if (offerBook){
+    extra = `<div style="margin-top:10px;"><button id="quickLoadBtn">Load PDF for "${escapeHtml(offerBook)}"…</button></div>`;
+  }
+  pdfViewport.innerHTML = `<div class="placeholder"><div>${escapeHtml(message)}${extra}</div></div>`;
+  pdfSurface = null;
+  totalPagesLabel.textContent = '–';
+  pageInput.value = '';
+  if (offerBook){
+    document.getElementById('quickLoadBtn').addEventListener('click', () => {
+      bookSelect.value = offerBook;
+      pdfInput.click();
+    });
+  }
+}
+
+function updatePdfSurfaceTransform(){
+  if (!pdfSurface) return;
+  pdfSurface.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${displayScale})`;
+}
+
+function scheduleZoomCommit(){
+  clearTimeout(zoomCommitTimeout);
+  zoomCommitTimeout = setTimeout(() => {
+    renderScale = pendingScale;
+    displayScale = 1;
+    zoomLabel.textContent = Math.round((renderScale/1.4)*100) + '%';
+    renderPdfPage(currentPage);
+  }, 100);
+}
+
+async function renderPdfPage(num){
+  const entry = currentBook ? booksPdf.get(currentBook) : null;
+  if (!entry) return;
+  const page = await entry.pdfDoc.getPage(num);
+  const viewport = page.getViewport({scale: renderScale});
+  pdfViewport.innerHTML = '';
+  pdfSurface = document.createElement('div');
+  pdfSurface.id = 'pdfSurface';
+  pdfSurface.style.transition = 'transform 160ms ease-out';
+  pdfSurface.style.transform = `translate(${panX}px, ${panY}px) scale(${displayScale})`;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'pdfCanvas';
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  pdfSurface.appendChild(canvas);
+  pdfViewport.appendChild(pdfSurface);
+  if (renderTask) { try { renderTask.cancel(); } catch(e){} }
+  renderTask = page.render({canvasContext: ctx, viewport});
+  try { await renderTask.promise; } catch(e){ /* cancelled render, ignore */ }
+}
+
+// ---- Zoom ----
+function setZoom(scale){
+  pendingScale = Math.min(4, Math.max(0.4, scale));
+  displayScale = pendingScale / renderScale;
+  if (pdfSurface){
+    updatePdfSurfaceTransform();
+  }
+  zoomLabel.textContent = Math.round((pendingScale/1.4)*100) + '%';
+  scheduleZoomCommit();
+}
+zoomInBtn.addEventListener('click', () => setZoom(pendingScale * 1.2));
+zoomOutBtn.addEventListener('click', () => setZoom(pendingScale / 1.2));
+zoomResetBtn.addEventListener('click', () => setZoom(1.4));
+
+pdfViewport.addEventListener('wheel', e => {
+  if (!currentBook) return;
+  e.preventDefault();
+  setZoom(pendingScale * (e.deltaY < 0 ? 1.08 : 1/1.08));
+}, {passive:false});
+
+// ---- Pan (drag to scroll) ----
+let dragging = false, dragStartX=0, dragStartY=0, startPanX=0, startPanY=0;
+pdfViewport.addEventListener('mousedown', e => {
+  if (e.button !== 0 || !pdfSurface) return;
+  dragging = true;
+  pdfViewport.classList.add('grabbing');
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  startPanX = panX; startPanY = panY;
+  e.preventDefault();
+});
+pdfViewport.addEventListener('mouseleave', () => {
+  dragging = false;
+  pdfViewport.classList.remove('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX = startPanX + (e.clientX - dragStartX);
+  panY = startPanY + (e.clientY - dragStartY);
+  updatePdfSurfaceTransform();
+});
+window.addEventListener('mouseup', () => { dragging=false; pdfViewport.classList.remove('grabbing'); });
+
+// ---- Page navigation (manual override within the loaded book) ----
+async function goToPage(num){
+  const entry = currentBook ? booksPdf.get(currentBook) : null;
+  if (!entry) return;
+  num = Math.min(entry.numPages, Math.max(1, num));
+  currentPage = num;
+  pageInput.value = num;
+  totalPagesLabel.textContent = entry.numPages;
+  prevPageBtn.disabled = num <= 1;
+  nextPageBtn.disabled = num >= entry.numPages;
+  panX = 0; panY = 0;
+  enableNavAndZoom();
+  await renderPdfPage(num);
+}
+prevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
+nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
+pageInput.addEventListener('change', () => goToPage(parseInt(pageInput.value, 10) || 1));
+
+bookSelect.addEventListener('change', () => {
+  const b = bookSelect.value;
+  if (booksPdf.has(b)){
+    currentBook = b;
+    bookTag.textContent = b;
+    goToPage(1);
+  }
+});
+
+// ---- keyboard: left/right move between words, unless typing ----
+window.addEventListener('keydown', e => {
+  const tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (!words.length) return;
+  if (e.key === 'ArrowLeft' && currentWordIndex > 0){ currentWordIndex--; renderWord(); }
+  if (e.key === 'ArrowRight' && currentWordIndex < words.length - 1){ currentWordIndex++; renderWord(); }
+});
+</script>
+</body>
+</html>
