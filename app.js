@@ -185,6 +185,23 @@ function populateBookSelect(){
   openPdfBtn.disabled = books.size === 0;
   openTagBtn.disabled = books.size === 0;
   openBboxBtn.disabled = books.size === 0;
+  updateLoadButtonLabels();
+}
+
+// Reflects, for the book currently selected in the dropdown, whether a PDF /
+// tag file / bbox CSV has already been loaded for it — so the toolbar makes
+// clear that loading again will REPLACE what's there, not add it for the first time.
+function updateLoadButtonLabels(){
+  const book = bookSelect.value;
+  openPdfBtn.textContent = (book && booksPdf.has(book))
+    ? '✓ PDF loaded — change…'
+    : 'Load PDF for book…';
+  openTagBtn.textContent = (book && tagsByBook.has(book))
+    ? '✓ Tag data loaded — change…'
+    : 'Load Tag Data…';
+  openBboxBtn.textContent = (book && bboxesByBook.has(book))
+    ? '✓ Bounding boxes loaded — change…'
+    : 'Load Bounding Boxes…';
 }
 
 jumpBox.addEventListener('change', () => {
@@ -255,6 +272,10 @@ function renderWord(){
       </div>
       <div class="occ-context"></div>
       <div class="occ-bbox-status"></div>
+      <div class="occ-meaning-wrap">
+        <label class="occ-meaning-label">Scholar's Notes <span class="occ-meaning-hint">(meaning, part of speech, number, tense, pronunciation, etc.)</span></label>
+        <textarea class="occ-meaning" rows="2" placeholder="e.g. verb, 3rd pers. plural, present tense — “they roam / wander”">${escapeHtml(occ.meaning || '')}</textarea>
+      </div>
     `;
     applyContextMarkup(row.querySelector('.occ-context'), occ);
     applyBboxStatus(row.querySelector('.occ-bbox-status'), occ);
@@ -275,6 +296,19 @@ function renderWord(){
       quickBboxBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         loadBboxDataForBook(quickBboxBtn.dataset.book);
+      });
+    }
+    const meaningEl = row.querySelector('.occ-meaning');
+    if (meaningEl){
+      // Don't let interacting with the textarea re-trigger page navigation —
+      // a scholar filling in meanings shouldn't have the PDF jump on every click.
+      meaningEl.addEventListener('click', e => e.stopPropagation());
+      meaningEl.addEventListener('mousedown', e => e.stopPropagation());
+      let meaningDirtyTimeout = null;
+      meaningEl.addEventListener('input', () => {
+        occ.meaning = meaningEl.value;
+        clearTimeout(meaningDirtyTimeout);
+        meaningDirtyTimeout = setTimeout(markDictDirty, 300);
       });
     }
     occList.appendChild(row);
@@ -308,7 +342,7 @@ function applyContextMarkup(contextEl, occ){
     contextEl.textContent = `No matching line found in the tag data for p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'}.`;
   } else {
     contextEl.classList.remove('occ-context-empty');
-    contextEl.textContent = text;
+    contextEl.innerHTML = `<span class="context-label">Context: </span>${escapeHtml(text)}`;
   }
 }
 
@@ -327,6 +361,7 @@ async function selectOccurrence(occ, i, occList){
   }
   currentBook = bookName;
   bookSelect.value = bookName;
+  updateLoadButtonLabels();
   const entry = booksPdf.get(bookName);
   const target = Math.min(entry.numPages, Math.max(1, pageNum || 1));
   await goToPage(target);
@@ -391,6 +426,7 @@ pdfInput.addEventListener('change', async e => {
     booksPdf.set(targetBook, {pdfDoc, numPages: pdfDoc.numPages});
     updateStatus(`Loaded PDF for "${targetBook}" (${pdfDoc.numPages} pages)`);
     enableNavAndZoom();
+    updateLoadButtonLabels();
     // If this is the book of the currently active occurrence, jump straight there
     const word = words[currentWordIndex];
     const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
@@ -443,6 +479,7 @@ tagInput.addEventListener('change', async e => {
     }
     tagsByBook.set(targetBook, map);
     updateStatus(`Loaded tag data for "${targetBook}" (${map.size.toLocaleString()} lines)`);
+    updateLoadButtonLabels();
     refreshOccList();
   } catch(err){
     updateStatus('Could not read tag data file: ' + err.message, true);
@@ -459,6 +496,7 @@ openTagBtn.addEventListener('click', () => {
 function loadTagDataForBook(bookName){
   if (!bookName) return;
   bookSelect.value = bookName;
+  updateLoadButtonLabels();
   tagInput.click();
 }
 
@@ -514,6 +552,7 @@ bboxInput.addEventListener('change', async e => {
     }
     bboxesByBook.set(targetBook, map);
     updateStatus(`Loaded bounding boxes for "${targetBook}" (${map.size.toLocaleString()} lines)`);
+    updateLoadButtonLabels();
     refreshOccList();
     if (currentBook === targetBook){
       updateActiveHighlightFromCurrentOccurrence();
@@ -534,6 +573,7 @@ openBboxBtn.addEventListener('click', () => {
 function loadBboxDataForBook(bookName){
   if (!bookName) return;
   bookSelect.value = bookName;
+  updateLoadButtonLabels();
   bboxInput.click();
 }
 
@@ -676,6 +716,7 @@ function showPdfPlaceholder(message, offerBook){
   if (offerBook){
     document.getElementById('quickLoadBtn').addEventListener('click', () => {
       bookSelect.value = offerBook;
+      updateLoadButtonLabels();
       pdfInput.click();
     });
   }
@@ -780,6 +821,7 @@ nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
 pageInput.addEventListener('change', () => goToPage(parseInt(pageInput.value, 10) || 1));
 
 bookSelect.addEventListener('change', () => {
+  updateLoadButtonLabels();
   const b = bookSelect.value;
   if (booksPdf.has(b)){
     currentBook = b;

@@ -229,6 +229,13 @@
     font-size:12px;
     color:var(--muted);
   }
+  .occ-context .context-label{
+    font-family:"Georgia","Times New Roman",serif;
+    font-style:italic;
+    font-size:11px;
+    color:var(--muted);
+    margin-right:3px;
+  }
   .occ-context .quick-tag-btn{
     font-family:"Georgia","Times New Roman",serif;
     font-style:normal;
@@ -252,6 +259,42 @@
     padding:3px 8px;
     margin-left:6px;
     vertical-align:middle;
+  }
+  .occ-meaning-wrap{
+    padding-left:13px;
+  }
+  .occ-meaning-label{
+    display:block;
+    font-size:10px;
+    letter-spacing:0.4px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:4px;
+  }
+  .occ-meaning-label .occ-meaning-hint{
+    text-transform:none;
+    letter-spacing:0;
+    font-style:italic;
+  }
+  .occ-meaning{
+    display:block;
+    width:100%;
+    box-sizing:border-box;
+    font-family:"Georgia","Times New Roman",serif;
+    font-size:12.5px;
+    line-height:1.5;
+    color:var(--ink);
+    background:#fffef9;
+    border:1px solid var(--line);
+    border-radius:3px;
+    padding:7px 9px;
+    resize:vertical;
+    min-height:42px;
+  }
+  .occ-meaning:focus{
+    outline:none;
+    border-color:var(--accent);
+    background:#fff;
   }
   .occ-delete-btn{
     flex-shrink:0;
