@@ -1,5 +1,31 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
+/* =====================================================================
+ * PROOF-OF-CONCEPT NOTE — multi-book asset loading
+ * =====================================================================
+ * The dictionary JSON is cross-corpus: a single word's occurrence list can
+ * reference several different `book_name`s, so this viewer supports having
+ * a PDF, a tag-data file, and a bounding-box CSV loaded per book at once
+ * (see booksPdf / tagsByBook / bboxesByBook below, and the #bookSelect
+ * dropdown in index.html).
+ *
+ * For this POC, "loading" a book's assets is a MANUAL step: the reviewer
+ * picks a book from the dropdown and clicks "Load PDF for book…" / "Load
+ * Tag Data…" / "Load Bounding Boxes…" to pick the matching local file
+ * themselves. There's no on-disk convention yet linking a `book_name` to
+ * its actual PDF/tag/bbox files.
+ *
+ * The intended production version replaces this manual step entirely: given
+ * a `book_name`, it should automatically resolve and fetch the correct PDF,
+ * tag file, and bounding-box CSV (e.g. from a folder/server convention like
+ * `<book_name>.pdf`, `<book_name>_tags.txt`, `<book_name>_bboxes.csv`), with
+ * no dropdown or manual file-picking required. When that lands, most of the
+ * code below this note (bookSelect, openPdfBtn/openTagBtn/openBboxBtn and
+ * their <input type="file"> handlers, and updateLoadButtonLabels) can be
+ * deleted and replaced with a single "load assets for this book_name"
+ * routine triggered automatically whenever the viewer needs them.
+ * ===================================================================== */
+
 // ================= dictionary state =================
 let dictData = null;        // { word: [ {book_name, location:{page_number,line_number,index}} ] }
 let words = [];             // sorted word list
@@ -8,6 +34,7 @@ let currentOccIndex = 0;
 let dictFileHandle = null;  // File System Access handle, if supported/granted
 let dictDirty = false;      // true if edits (deletions) haven't been saved yet
 
+// ---- Manual per-book asset storage (POC — see banner note above) ----
 // bookName -> { pdfDoc, numPages }
 let booksPdf = new Map();
 let currentBook = null;     // book name currently shown in viewer
@@ -191,6 +218,9 @@ function populateBookSelect(){
 // Reflects, for the book currently selected in the dropdown, whether a PDF /
 // tag file / bbox CSV has already been loaded for it — so the toolbar makes
 // clear that loading again will REPLACE what's there, not add it for the first time.
+// POC: this whole function exists only because loading is manual (see banner
+// note at top of file). Once assets auto-resolve by book_name, this becomes
+// unnecessary — there's nothing for a "Load…" button to be relabeled.
 function updateLoadButtonLabels(){
   const book = bookSelect.value;
   openPdfBtn.textContent = (book && booksPdf.has(book))
@@ -273,8 +303,8 @@ function renderWord(){
       <div class="occ-context"></div>
       <div class="occ-bbox-status"></div>
       <div class="occ-meaning-wrap">
-        <label class="occ-meaning-label">Scholar's Notes <span class="occ-meaning-hint">(meaning, part of speech, number, tense, pronunciation, etc.)</span></label>
-        <textarea class="occ-meaning" rows="2" placeholder="e.g. verb, 3rd pers. plural, present tense — “they roam / wander”">${escapeHtml(occ.meaning || '')}</textarea>
+        <label class="occ-meaning-label">Scholar's notes<span class="occ-meaning-hint"></span></label>
+        <textarea class="occ-meaning" rows="2" placeholder="(meaning, part of speech, number, tense, pronunciation, etc.)">${escapeHtml(occ.meaning || '')}</textarea>
       </div>
     `;
     applyContextMarkup(row.querySelector('.occ-context'), occ);
@@ -413,6 +443,10 @@ function escapeHtml(s){
 }
 
 // ================= PDF loading per book =================
+// POC: manual file picker keyed to whichever book is selected in the
+// dropdown. Production version: auto-fetch by book_name — see banner note
+// at the top of this file. Delete this block (and openPdfBtn's wiring in
+// index.html) once that's in place.
 const pdfInput = document.createElement('input');
 pdfInput.type = 'file'; pdfInput.accept = 'application/pdf';
 pdfInput.addEventListener('change', async e => {
@@ -450,6 +484,10 @@ openPdfBtn.addEventListener('click', () => {
 });
 
 // ================= tag data (context sentences) loading =================
+// POC: manual file picker keyed to whichever book is selected in the
+// dropdown. Production version: auto-fetch by book_name — see banner note
+// at the top of this file. Delete this block (and openTagBtn's wiring in
+// index.html) once that's in place.
 // Expects lines like: [PAGE 0091, LINE 006] एण-खुर-खंडिआपंडु-जच्च-कच्चूर-चुण्णमुण्णमइ ।
 const TAG_LINE_RE = /\[\s*PAGE\s+(\d+)\s*,\s*LINE\s+(\d+)\s*\]\s*([^\r\n]*)/gi;
 
@@ -501,6 +539,10 @@ function loadTagDataForBook(bookName){
 }
 
 // ================= bounding box (line coordinates) loading =================
+// POC: manual file picker keyed to whichever book is selected in the
+// dropdown. Production version: auto-fetch by book_name — see banner note
+// at the top of this file. Delete this block (and openBboxBtn's wiring in
+// index.html) once that's in place.
 // Expects a CSV with header: page_number,line_number,x1,y1,x2,y2
 // x1,y1 = top-left corner, x2,y2 = bottom-right corner, normalized 0-1
 // (fraction of page width/height) — produced by run_ocr_batch.py / process_ocr_shards.py.

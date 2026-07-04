@@ -31,6 +31,13 @@
       <span>Source PDF</span>
       <span class="book-tag" id="bookTag"></span>
       <div class="fill"></div>
+      <!--
+        POC NOTE: bookSelect + the three "Load …" buttons below are a manual
+        stand-in for per-book asset loading. In production, the matching PDF /
+        tag file / bounding-box CSV should be auto-resolved from `book_name`
+        with no dropdown or file picker needed. See the banner comment at the
+        top of app.js for details on what to replace.
+      -->
       <select id="bookSelect" disabled></select>
       <button id="openPdfBtn" disabled>Load PDF for book…</button>
       <button id="openTagBtn" disabled>Load Tag Data…</button>
