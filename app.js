@@ -27,7 +27,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
  * ===================================================================== */
 
 // ================= dictionary state =================
-let dictData = null;        // { word: [ {book_name, location:{page_number,line_number,index}} ] }
+let dictData = null;        // { word: [ {book_name, page_number, line_number, word_number} ] }
 let words = [];             // sorted word list
 let currentWordIndex = -1;
 let currentOccIndex = 0;
@@ -289,14 +289,13 @@ function renderWord(){
   occurrences.forEach((occ, i) => {
     const row = document.createElement('div');
     row.className = 'occ-row' + (i === 0 ? ' active' : '');
-    const loc = occ.location || {};
     const hasPdf = booksPdf.has(occ.book_name);
     const hasBboxData = bboxesByBook.has(occ.book_name);
     row.innerHTML = `
       <div class="occ-row-top">
         <span class="pdf-dot ${hasPdf ? 'ready' : ''}" title="PDF loaded"></span>
         <span class="bbox-dot ${hasBboxData ? 'ready' : ''}" title="Bounding boxes loaded"></span>
-        <span class="book-loc">${escapeHtml(occ.book_name || 'Unknown')}<span class="loc">p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'} · idx ${loc.index ?? '–'}</span></span>
+        <span class="book-loc">${escapeHtml(occ.book_name || 'Unknown')}<span class="loc">p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'} · #${occ.word_number ?? '–'}</span></span>
         <div class="fill"></div>
         <button class="occ-delete-btn" title="Delete this occurrence">✕</button>
       </div>
@@ -354,8 +353,7 @@ function renderWord(){
 }
 
 function applyContextMarkup(contextEl, occ){
-  const loc = occ.location || {};
-  const text = getContextText(occ.book_name, loc.page_number, loc.line_number);
+  const text = getContextText(occ.book_name, occ.page_number, occ.line_number);
   if (text === undefined){
     contextEl.classList.add('occ-context-empty');
     contextEl.innerHTML = `Tag data not loaded for "${escapeHtml(occ.book_name || 'this book')}" — <button class="quick-tag-btn" data-book="${escapeHtml(occ.book_name || '')}">Load tag data…</button>`;
@@ -369,7 +367,7 @@ function applyContextMarkup(contextEl, occ){
   } else if (text === null){
     contextEl.classList.add('occ-context-empty');
     contextEl.classList.remove('occ-context-filled');
-    contextEl.textContent = `No matching line found in the tag data for p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'}.`;
+    contextEl.textContent = `No matching line found in the tag data for p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'}.`;
   } else {
     contextEl.classList.remove('occ-context-empty');
     contextEl.innerHTML = `<span class="context-label">Context: </span>${escapeHtml(text)}`;
@@ -380,7 +378,7 @@ async function selectOccurrence(occ, i, occList){
   currentOccIndex = i;
   [...occList.children].forEach((r, idx) => r.classList.toggle('active', idx === i));
   const bookName = occ.book_name;
-  const pageNum = occ.location ? occ.location.page_number : null;
+  const pageNum = occ.page_number ?? null;
   bookTag.textContent = bookName || '';
 
   updateActiveHighlightFromCurrentOccurrence();
@@ -466,7 +464,7 @@ pdfInput.addEventListener('change', async e => {
     const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
     if (occ && occ.book_name === targetBook){
       currentBook = targetBook;
-      const target = Math.min(pdfDoc.numPages, Math.max(1, occ.location ? occ.location.page_number : 1));
+      const target = Math.min(pdfDoc.numPages, Math.max(1, occ.page_number || 1));
       await goToPage(target);
       centerOnHighlightIfNeeded();
     }
@@ -629,8 +627,7 @@ function getBoundingBox(bookName, pageNum, lineNum){
 }
 
 function applyBboxStatus(statusEl, occ){
-  const loc = occ.location || {};
-  const bbox = getBoundingBox(occ.book_name, loc.page_number, loc.line_number);
+  const bbox = getBoundingBox(occ.book_name, occ.page_number, occ.line_number);
   if (bbox === undefined){
     statusEl.innerHTML = `Bounding boxes not loaded for "${escapeHtml(occ.book_name || 'this book')}" — <button class="quick-bbox-btn" data-book="${escapeHtml(occ.book_name || '')}">Load…</button>`;
     const btn = statusEl.querySelector('.quick-bbox-btn');
@@ -641,7 +638,7 @@ function applyBboxStatus(statusEl, occ){
       });
     }
   } else if (bbox === null){
-    statusEl.textContent = `No bounding box found for p.${loc.page_number ?? '–'} · l.${loc.line_number ?? '–'}`;
+    statusEl.textContent = `No bounding box found for p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'}`;
   } else {
     statusEl.innerHTML = '';
   }
@@ -654,10 +651,9 @@ function updateActiveHighlightFromCurrentOccurrence(){
   const word = words[currentWordIndex];
   const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
   if (!occ){ activeHighlight = null; return; }
-  const loc = occ.location || {};
-  const bbox = getBoundingBox(occ.book_name, loc.page_number, loc.line_number);
-  activeHighlight = (bbox && loc.page_number)
-    ? {bookName: occ.book_name, pageNum: loc.page_number, bbox}
+  const bbox = getBoundingBox(occ.book_name, occ.page_number, occ.line_number);
+  activeHighlight = (bbox && occ.page_number)
+    ? {bookName: occ.book_name, pageNum: occ.page_number, bbox}
     : null;
 }
 
