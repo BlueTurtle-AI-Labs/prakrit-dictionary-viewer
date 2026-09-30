@@ -30,21 +30,22 @@
     <div class="pane-head">
       <span>Source PDF</span>
       <span class="book-tag" id="bookTag"></span>
-      <div class="fill"></div>
       <!--
         POC NOTE: bookSelect + the three "Load …" buttons below are a manual
         stand-in for per-book asset loading. In production, the matching PDF /
-        tag file / bounding-box CSV should be auto-resolved from `book_name`
+        lines CSV should be auto-resolved from `book_name`
         with no dropdown or file picker needed. See the banner comment at the
         top of app.js for details on what to replace.
       -->
-      <select id="bookSelect" disabled></select>
+      <select id="bookSelect" disabled hidden></select>
       <button id="openPdfBtn" disabled>Load PDF for book…</button>
-      <button id="openTagBtn" disabled>Load Tag Data…</button>
-      <button id="openBboxBtn" disabled>Load Bounding Boxes…</button>
-      <div class="sep"></div>
-      <label class="highlight-toggle" title="Draw a box around the selected occurrence's line, and center the view on it">
-        <input type="checkbox" id="highlightToggle" checked> Highlight line
+      <button id="openTagBtn" disabled>Load Lines CSV…</button>
+      <div class="row-break"></div>
+      <label class="highlight-toggle" title="Draw a box around the selected occurrence's word, and center the view on it">
+        <input type="checkbox" id="highlightToggle" checked> Highlight word
+      </label>
+      <label class="highlight-toggle" title="Draw a faint box around the whole line the word is on">
+        <input type="checkbox" id="lineHighlightToggle" checked> Highlight line
       </label>
       <div class="sep"></div>
       <button id="prevPageBtn" disabled>◀</button>

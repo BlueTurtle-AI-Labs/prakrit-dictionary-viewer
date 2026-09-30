@@ -5,29 +5,31 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
  * =====================================================================
  * The dictionary JSON is cross-corpus: a single word's occurrence list can
  * reference several different `book_name`s, so this viewer supports having
- * a PDF, a tag-data file, and a bounding-box CSV loaded per book at once
- * (see booksPdf / tagsByBook / bboxesByBook below, and the #bookSelect
+ * a PDF and a lines CSV loaded per book at once
+ * (see booksPdf / tagsByBook below, and the #bookSelect
  * dropdown in index.html).
  *
  * For this POC, "loading" a book's assets is a MANUAL step: the reviewer
  * picks a book from the dropdown and clicks "Load PDF for book…" / "Load
- * Tag Data…" / "Load Bounding Boxes…" to pick the matching local file
+ * Lines CSV…" to pick the matching local file
  * themselves. There's no on-disk convention yet linking a `book_name` to
- * its actual PDF/tag/bbox files.
+ * its actual PDF/lines files.
  *
  * The intended production version replaces this manual step entirely: given
- * a `book_name`, it should automatically resolve and fetch the correct PDF,
- * tag file, and bounding-box CSV (e.g. from a folder/server convention like
- * `<book_name>.pdf`, `<book_name>_tags.txt`, `<book_name>_bboxes.csv`), with
+ * a `book_name`, it should automatically resolve and fetch the correct PDF
+ * and lines CSV (e.g. from a folder/server convention like
+ * `<book_name>.pdf`, `<book_name>_lines.csv`), with
  * no dropdown or manual file-picking required. When that lands, most of the
- * code below this note (bookSelect, openPdfBtn/openTagBtn/openBboxBtn and
+ * code below this note (bookSelect, openPdfBtn/openTagBtn and
  * their <input type="file"> handlers, and updateLoadButtonLabels) can be
  * deleted and replaced with a single "load assets for this book_name"
  * routine triggered automatically whenever the viewer needs them.
  * ===================================================================== */
 
 // ================= dictionary state =================
-let dictData = null;        // { word: [ {book_name, page_number, line_number, word_number} ] }
+let dictData = null;        // { word: [ {page_number, line_number, word_number_in_line, bbox:{x_min,y_min,x_max,y_max,angle}, confidence} ] }
+let dictWrapper = null;     // the full parsed file ({book_name, words}); dictData is dictWrapper.words
+let dictBook = null;        // top-level book_name of the loaded dictionary (occurrences don't carry their own)
 let words = [];             // sorted word list
 let currentWordIndex = -1;
 let currentOccIndex = 0;
@@ -40,15 +42,14 @@ let booksPdf = new Map();
 let currentBook = null;     // book name currently shown in viewer
 let currentPage = 1;
 
-// bookName -> Map("page_line" -> context sentence)
+// bookName -> Map("page_line" -> {text, bbox|null})  (bbox normalized 0-1, may be null)
 let tagsByBook = new Map();
 
-// bookName -> Map("page_line" -> {x1,y1,x2,y2})  (normalized 0-1 coordinates)
-let bboxesByBook = new Map();
 // The bounding box that should be highlighted on the currently rendered page, if any:
-// {bookName, pageNum, bbox} or null
+// {bookName, pageNum, bbox: {x1,y1,x2,y2} normalized 0-1} or null
 let activeHighlight = null;
-let highlightEnabled = true;
+let highlightEnabled = true;      // word box
+let lineHighlightEnabled = true;  // line box
 
 // ================= pdf viewer state (adapted) =================
 let renderScale = 1.4;
@@ -74,8 +75,8 @@ const bookTag = el('bookTag');
 const bookSelect = el('bookSelect');
 const openPdfBtn = el('openPdfBtn');
 const openTagBtn = el('openTagBtn');
-const openBboxBtn = el('openBboxBtn');
 const highlightToggle = el('highlightToggle');
+const lineHighlightToggle = el('lineHighlightToggle');
 const prevPageBtn = el('prevPageBtn');
 const nextPageBtn = el('nextPageBtn');
 const pageInput = el('pageInput');
@@ -94,7 +95,13 @@ function updateStatus(msg, isError){
 // ================= dictionary loading =================
 function loadDictFromText(text){
   const parsed = JSON.parse(text);
-  dictData = parsed;
+  if (!parsed || typeof parsed.words !== 'object' || Array.isArray(parsed.words)){
+    updateStatus('Unrecognized dictionary format: expected {"book_name": ..., "words": {...}}.', true);
+    return false;
+  }
+  dictWrapper = parsed;
+  dictBook = parsed.book_name || null;
+  dictData = parsed.words;
   words = Object.keys(dictData).sort((a,b) => a.localeCompare(b, 'hi'));
   if (words.length === 0){
     updateStatus('No entries found in that file.', true);
@@ -154,7 +161,7 @@ function markDictDirty(){
 
 async function saveDictionary(){
   if (!dictData) return;
-  const json = JSON.stringify(dictData, null, 2);
+  const json = JSON.stringify(dictWrapper, null, 2);
   if (dictFileHandle){
     try {
       const writable = await dictFileHandle.createWritable();
@@ -195,11 +202,26 @@ function populateWordList(){
   wordList.appendChild(frag);
 }
 
+// Occurrences in the word index don't carry a book name; it's file-level.
+function occBook(occ){
+  return occ.book_name || dictBook;
+}
+
+// Word bbox from an occurrence, as normalized {x1,y1,x2,y2,angle (deg, clockwise)}, or null if absent.
+function occBbox(occ){
+  const b = occ.bbox;
+  if (!b) return null;
+  const {x_min: x1, y_min: y1, x_max: x2, y_max: y2} = b;
+  if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) return null;
+  return {x1, y1, x2, y2, angle: Number.isFinite(b.angle) ? b.angle : 0};
+}
+
 function populateBookSelect(){
   const books = new Set();
   for (const w of words){
     for (const occ of dictData[w]){
-      if (occ.book_name) books.add(occ.book_name);
+      const b = occBook(occ);
+      if (b) books.add(b);
     }
   }
   bookSelect.innerHTML = '';
@@ -209,14 +231,14 @@ function populateBookSelect(){
     bookSelect.appendChild(opt);
   }
   bookSelect.disabled = books.size === 0;
+  bookSelect.hidden = books.size === 0;
   openPdfBtn.disabled = books.size === 0;
   openTagBtn.disabled = books.size === 0;
-  openBboxBtn.disabled = books.size === 0;
   updateLoadButtonLabels();
 }
 
 // Reflects, for the book currently selected in the dropdown, whether a PDF /
-// tag file / bbox CSV has already been loaded for it — so the toolbar makes
+// tag file has already been loaded for it — so the toolbar makes
 // clear that loading again will REPLACE what's there, not add it for the first time.
 // POC: this whole function exists only because loading is manual (see banner
 // note at top of file). Once assets auto-resolve by book_name, this becomes
@@ -229,9 +251,6 @@ function updateLoadButtonLabels(){
   openTagBtn.textContent = (book && tagsByBook.has(book))
     ? '✓ Tag data loaded — change…'
     : 'Load Tag Data…';
-  openBboxBtn.textContent = (book && bboxesByBook.has(book))
-    ? '✓ Bounding boxes loaded — change…'
-    : 'Load Bounding Boxes…';
 }
 
 jumpBox.addEventListener('change', () => {
@@ -289,13 +308,11 @@ function renderWord(){
   occurrences.forEach((occ, i) => {
     const row = document.createElement('div');
     row.className = 'occ-row' + (i === 0 ? ' active' : '');
-    const hasPdf = booksPdf.has(occ.book_name);
-    const hasBboxData = bboxesByBook.has(occ.book_name);
+    const hasPdf = booksPdf.has(occBook(occ));
     row.innerHTML = `
       <div class="occ-row-top">
         <span class="pdf-dot ${hasPdf ? 'ready' : ''}" title="PDF loaded"></span>
-        <span class="bbox-dot ${hasBboxData ? 'ready' : ''}" title="Bounding boxes loaded"></span>
-        <span class="book-loc">${escapeHtml(occ.book_name || 'Unknown')}<span class="loc">p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'} · #${occ.word_number ?? '–'}</span></span>
+        <span class="book-loc">${escapeHtml(occBook(occ) || 'Unknown')}<span class="loc">p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'} · #${occ.word_number_in_line ?? '–'}</span></span>
         <div class="fill"></div>
         <button class="occ-delete-btn" title="Delete this occurrence">✕</button>
       </div>
@@ -318,13 +335,6 @@ function renderWord(){
       quickBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         loadTagDataForBook(quickBtn.dataset.book);
-      });
-    }
-    const quickBboxBtn = row.querySelector('.quick-bbox-btn');
-    if (quickBboxBtn){
-      quickBboxBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        loadBboxDataForBook(quickBboxBtn.dataset.book);
       });
     }
     const meaningEl = row.querySelector('.occ-meaning');
@@ -353,10 +363,10 @@ function renderWord(){
 }
 
 function applyContextMarkup(contextEl, occ){
-  const text = getContextText(occ.book_name, occ.page_number, occ.line_number);
+  const text = getContextText(occBook(occ), occ.page_number, occ.line_number);
   if (text === undefined){
     contextEl.classList.add('occ-context-empty');
-    contextEl.innerHTML = `Tag data not loaded for "${escapeHtml(occ.book_name || 'this book')}" — <button class="quick-tag-btn" data-book="${escapeHtml(occ.book_name || '')}">Load tag data…</button>`;
+    contextEl.innerHTML = `Tag data not loaded for "${escapeHtml(occBook(occ) || 'this book')}" — <button class="quick-tag-btn" data-book="${escapeHtml(occBook(occ) || '')}">Load tag data…</button>`;
     const btn = contextEl.querySelector('.quick-tag-btn');
     if (btn){
       btn.addEventListener('click', (e) => {
@@ -377,7 +387,7 @@ function applyContextMarkup(contextEl, occ){
 async function selectOccurrence(occ, i, occList){
   currentOccIndex = i;
   [...occList.children].forEach((r, idx) => r.classList.toggle('active', idx === i));
-  const bookName = occ.book_name;
+  const bookName = occBook(occ);
   const pageNum = occ.page_number ?? null;
   bookTag.textContent = bookName || '';
 
@@ -462,7 +472,7 @@ pdfInput.addEventListener('change', async e => {
     // If this is the book of the currently active occurrence, jump straight there
     const word = words[currentWordIndex];
     const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
-    if (occ && occ.book_name === targetBook){
+    if (occ && occBook(occ) === targetBook){
       currentBook = targetBook;
       const target = Math.min(pdfDoc.numPages, Math.max(1, occ.page_number || 1));
       await goToPage(target);
@@ -486,11 +496,67 @@ openPdfBtn.addEventListener('click', () => {
 // dropdown. Production version: auto-fetch by book_name — see banner note
 // at the top of this file. Delete this block (and openTagBtn's wiring in
 // index.html) once that's in place.
-// Expects lines like: [PAGE 0091, LINE 006] एण-खुर-खंडिआपंडु-जच्च-कच्चूर-चुण्णमुण्णमइ ।
-const TAG_LINE_RE = /\[\s*PAGE\s+(\d+)\s*,\s*LINE\s+(\d+)\s*\]\s*([^\r\n]*)/gi;
+// Expects a CSV with header: book_name,page_number,line_number,line_data
+// (e.g. BhuvKevCa_lines.csv). Fields may be double-quoted, with "" as an escaped quote.
+function parseCsv(text){
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"'){
+        if (text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"'){
+      inQuotes = true;
+    } else if (c === ','){
+      row.push(field); field = '';
+    } else if (c === '\n' || c === '\r'){
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some(f => f.length)) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some(f => f.length)) rows.push(row);
+  return rows;
+}
+
+function parseLinesCsv(text){
+  const rows = parseCsv(text);
+  if (rows.length === 0) return new Map();
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const col = {
+    page: header.indexOf('page_number'),
+    line: header.indexOf('line_number'),
+    text: header.indexOf('line_data'),
+  };
+  const box = ['x_min','y_min','x_max','y_max'].map(h => header.indexOf(h));  // optional
+  const hasBox = box.every(idx => idx !== -1);
+  if (Object.values(col).some(idx => idx === -1)){
+    throw new Error('CSV must have columns: page_number, line_number, line_data');
+  }
+  const map = new Map();
+  for (let i = 1; i < rows.length; i++){
+    const page = parseInt(rows[i][col.page], 10);
+    const line = parseInt(rows[i][col.line], 10);
+    if (Number.isNaN(page) || Number.isNaN(line)) continue;
+    let bbox = null;
+    if (hasBox){
+      const [x1, y1, x2, y2] = box.map(idx => parseFloat(rows[i][idx]));
+      const angle = parseFloat(rows[i][header.indexOf('angle')]);
+      if (![x1, y1, x2, y2].some(Number.isNaN)) bbox = {x1, y1, x2, y2, angle: Number.isNaN(angle) ? 0 : angle};
+    }
+    map.set(`${page}_${line}`, {text: (rows[i][col.text] ?? '').trim(), bbox});
+  }
+  return map;
+}
 
 const tagInput = document.createElement('input');
-tagInput.type = 'file'; tagInput.accept = 'text/plain,.txt';
+tagInput.type = 'file'; tagInput.accept = 'text/csv,.csv';
 tagInput.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -498,25 +564,19 @@ tagInput.addEventListener('change', async e => {
   updateStatus(`Loading tag data for "${targetBook}"…`);
   try {
     const text = await file.text();
-    const map = new Map();
-    let match;
-    TAG_LINE_RE.lastIndex = 0;
-    while ((match = TAG_LINE_RE.exec(text)) !== null){
-      const page = parseInt(match[1], 10);
-      const line = parseInt(match[2], 10);
-      const sentence = match[3].trim();
-      if (!isNaN(page) && !isNaN(line)){
-        map.set(`${page}_${line}`, sentence);
-      }
-    }
+    const map = parseLinesCsv(text);
     if (map.size === 0){
-      updateStatus(`No "[PAGE ####, LINE ####]" entries found in that file.`, true);
+      updateStatus('No valid line rows found in that file.', true);
       return;
     }
     tagsByBook.set(targetBook, map);
     updateStatus(`Loaded tag data for "${targetBook}" (${map.size.toLocaleString()} lines)`);
     updateLoadButtonLabels();
     refreshOccList();
+    if (currentBook === targetBook){
+      updateActiveHighlightFromCurrentOccurrence();
+      renderHighlightOverlay(currentPage);
+    }
   } catch(err){
     updateStatus('Could not read tag data file: ' + err.message, true);
   }
@@ -536,112 +596,14 @@ function loadTagDataForBook(bookName){
   tagInput.click();
 }
 
-// ================= bounding box (line coordinates) loading =================
-// POC: manual file picker keyed to whichever book is selected in the
-// dropdown. Production version: auto-fetch by book_name — see banner note
-// at the top of this file. Delete this block (and openBboxBtn's wiring in
-// index.html) once that's in place.
-// Expects a CSV with header: page_number,line_number,x1,y1,x2,y2
-// x1,y1 = top-left corner, x2,y2 = bottom-right corner, normalized 0-1
-// (fraction of page width/height) — produced by run_ocr_batch.py / process_ocr_shards.py.
-function parseBboxCsv(text){
-  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim().length > 0);
-  if (lines.length === 0) return new Map();
-
-  const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-  const col = {
-    page: header.indexOf('page_number'),
-    line: header.indexOf('line_number'),
-    x1: header.indexOf('x1'),
-    y1: header.indexOf('y1'),
-    x2: header.indexOf('x2'),
-    y2: header.indexOf('y2'),
-  };
-  if (Object.values(col).some(idx => idx === -1)){
-    throw new Error('CSV must have columns: page_number, line_number, x1, y1, x2, y2');
-  }
-
-  const map = new Map();
-  for (let i = 1; i < lines.length; i++){
-    const cols = lines[i].split(',');
-    const page = parseInt(cols[col.page], 10);
-    const line = parseInt(cols[col.line], 10);
-    const x1 = parseFloat(cols[col.x1]);
-    const y1 = parseFloat(cols[col.y1]);
-    const x2 = parseFloat(cols[col.x2]);
-    const y2 = parseFloat(cols[col.y2]);
-    if ([page, line, x1, y1, x2, y2].some(v => Number.isNaN(v))) continue;
-    map.set(`${page}_${line}`, {x1, y1, x2, y2});
-  }
-  return map;
-}
-
-const bboxInput = document.createElement('input');
-bboxInput.type = 'file'; bboxInput.accept = 'text/csv,.csv';
-bboxInput.addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const targetBook = bookSelect.value;
-  updateStatus(`Loading bounding boxes for "${targetBook}"…`);
-  try {
-    const text = await file.text();
-    const map = parseBboxCsv(text);
-    if (map.size === 0){
-      updateStatus('No valid bounding-box rows found in that file.', true);
-      return;
-    }
-    bboxesByBook.set(targetBook, map);
-    updateStatus(`Loaded bounding boxes for "${targetBook}" (${map.size.toLocaleString()} lines)`);
-    updateLoadButtonLabels();
-    refreshOccList();
-    if (currentBook === targetBook){
-      updateActiveHighlightFromCurrentOccurrence();
-      renderHighlightOverlay(currentPage);
-    }
-  } catch(err){
-    updateStatus('Could not read bounding box CSV: ' + err.message, true);
-  }
-});
-openBboxBtn.addEventListener('click', () => {
-  if (!bookSelect.value){
-    updateStatus('No book selected.', true);
-    return;
-  }
-  bboxInput.click();
-});
-
-function loadBboxDataForBook(bookName){
-  if (!bookName) return;
-  bookSelect.value = bookName;
-  updateLoadButtonLabels();
-  bboxInput.click();
-}
-
-// Returns: {x1,y1,x2,y2} (bbox found), null (bbox data loaded but no match), or
-// undefined (no bbox data loaded for this book yet)
-function getBoundingBox(bookName, pageNum, lineNum){
-  const map = bboxesByBook.get(bookName);
-  if (!map) return undefined;
-  const key = `${pageNum}_${lineNum}`;
-  return map.has(key) ? map.get(key) : null;
-}
-
+// ================= word bounding boxes =================
+// Word bboxes come from the dictionary JSON itself (occ.bbox, normalized 0-1),
+// so there's nothing extra to load. The full line stays available as context
+// in the occurrence cards (from the lines CSV).
 function applyBboxStatus(statusEl, occ){
-  const bbox = getBoundingBox(occ.book_name, occ.page_number, occ.line_number);
-  if (bbox === undefined){
-    statusEl.innerHTML = `Bounding boxes not loaded for "${escapeHtml(occ.book_name || 'this book')}" — <button class="quick-bbox-btn" data-book="${escapeHtml(occ.book_name || '')}">Load…</button>`;
-    const btn = statusEl.querySelector('.quick-bbox-btn');
-    if (btn){
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        loadBboxDataForBook(btn.dataset.book);
-      });
-    }
-  } else if (bbox === null){
-    statusEl.textContent = `No bounding box found for p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'}`;
-  } else {
-    statusEl.innerHTML = '';
-  }
+  statusEl.textContent = occBbox(occ)
+    ? ''
+    : `No bounding box recorded for p.${occ.page_number ?? '–'} · l.${occ.line_number ?? '–'} · #${occ.word_number_in_line ?? '–'}`;
 }
 
 // Recomputes activeHighlight (the box to draw/center on) from whichever
@@ -651,9 +613,9 @@ function updateActiveHighlightFromCurrentOccurrence(){
   const word = words[currentWordIndex];
   const occ = word ? (dictData[word] || [])[currentOccIndex] : null;
   if (!occ){ activeHighlight = null; return; }
-  const bbox = getBoundingBox(occ.book_name, occ.page_number, occ.line_number);
+  const bbox = occBbox(occ);
   activeHighlight = (bbox && occ.page_number)
-    ? {bookName: occ.book_name, pageNum: occ.page_number, bbox}
+    ? {bookName: occBook(occ), pageNum: occ.page_number, bbox, lineBbox: getLineBbox(occ)}
     : null;
 }
 
@@ -663,36 +625,39 @@ function updateActiveHighlightFromCurrentOccurrence(){
 // #pdfSurface, it pans/zooms in lockstep with the page automatically.
 function renderHighlightOverlay(pageNum){
   if (!pdfSurface) return;
-  const existing = pdfSurface.querySelector('.bbox-highlight');
-  if (existing) existing.remove();
+  pdfSurface.querySelectorAll('.bbox-highlight, .bbox-line-highlight').forEach(n => n.remove());
 
-  if (!highlightEnabled || !activeHighlight) return;
+  if ((!highlightEnabled && !lineHighlightEnabled) || !activeHighlight) return;
   if (activeHighlight.pageNum !== pageNum || activeHighlight.bookName !== currentBook) return;
 
   const canvas = pdfSurface.querySelector('canvas');
   if (!canvas) return;
 
-  const {x1, y1, x2, y2} = activeHighlight.bbox;
-  const pad = 0.004; // small padding so the box doesn't hug the glyphs too tightly
-  const left = Math.max(0, x1 - pad) * canvas.width;
-  const top = Math.max(0, y1 - pad) * canvas.height;
-  const right = Math.min(1, x2 + pad) * canvas.width;
-  const bottom = Math.min(1, y2 + pad) * canvas.height;
-
-  const box = document.createElement('div');
-  box.className = 'bbox-highlight';
-  box.style.left = `${left}px`;
-  box.style.top = `${top}px`;
-  box.style.width = `${Math.max(1, right - left)}px`;
-  box.style.height = `${Math.max(1, bottom - top)}px`;
-  pdfSurface.appendChild(box);
+  const addBox = (bbox, className, pad) => {
+    const left = Math.max(0, bbox.x1 - pad) * canvas.width;
+    const top = Math.max(0, bbox.y1 - pad) * canvas.height;
+    const right = Math.min(1, bbox.x2 + pad) * canvas.width;
+    const bottom = Math.min(1, bbox.y2 + pad) * canvas.height;
+    const box = document.createElement('div');
+    box.className = className;
+    box.style.left = `${left}px`;
+    box.style.top = `${top}px`;
+    box.style.width = `${Math.max(1, right - left)}px`;
+    box.style.height = `${Math.max(1, bottom - top)}px`;
+    // The box is the unrotated rectangle; tilt it about its center (positive = clockwise).
+    if (bbox.angle) box.style.transform = `rotate(${bbox.angle}deg)`;
+    pdfSurface.appendChild(box);
+  };
+  // Line first so the word box paints on top of it.
+  if (lineHighlightEnabled && activeHighlight.lineBbox) addBox(activeHighlight.lineBbox, 'bbox-line-highlight', 0.002);
+  if (highlightEnabled) addBox(activeHighlight.bbox, 'bbox-highlight', 0.002); // small padding so the box doesn't hug the glyphs
 }
 
 // Pans the viewport so the active highlight is centered on screen. Only
 // called right after navigating to a new occurrence — not on every re-render
 // (e.g. during zooming), so it never fights the scholar's own panning.
 function centerOnHighlightIfNeeded(){
-  if (!highlightEnabled || !activeHighlight || !pdfSurface) return;
+  if ((!highlightEnabled && !lineHighlightEnabled) || !activeHighlight || !pdfSurface) return;
   if (activeHighlight.pageNum !== currentPage || activeHighlight.bookName !== currentBook) return;
 
   const canvas = pdfSurface.querySelector('canvas');
@@ -710,13 +675,24 @@ highlightToggle.addEventListener('change', () => {
   highlightEnabled = highlightToggle.checked;
   if (pdfSurface) renderHighlightOverlay(currentPage);
 });
+lineHighlightToggle.addEventListener('change', () => {
+  lineHighlightEnabled = lineHighlightToggle.checked;
+  if (pdfSurface) renderHighlightOverlay(currentPage);
+});
 
 // Returns: string (context found), null (tag data loaded but no match), or undefined (no tag data for this book yet)
 function getContextText(bookName, pageNum, lineNum){
   const map = tagsByBook.get(bookName);
   if (!map) return undefined;
   const key = `${pageNum}_${lineNum}`;
-  return map.has(key) ? map.get(key) : null;
+  return map.has(key) ? map.get(key).text : null;
+}
+
+// Line bbox for an occurrence from the lines CSV, or null.
+function getLineBbox(occ){
+  const map = tagsByBook.get(occBook(occ));
+  const entry = map && map.get(`${occ.page_number}_${occ.line_number}`);
+  return entry ? entry.bbox : null;
 }
 
 function refreshOccList(){
@@ -725,13 +701,9 @@ function refreshOccList(){
     const occ = (dictData[word] || [])[i];
     if (!occ) return;
     const dot = row.querySelector('.pdf-dot');
-    if (dot) dot.classList.toggle('ready', booksPdf.has(occ.book_name));
-    const bboxDot = row.querySelector('.bbox-dot');
-    if (bboxDot) bboxDot.classList.toggle('ready', bboxesByBook.has(occ.book_name));
+    if (dot) dot.classList.toggle('ready', booksPdf.has(occBook(occ)));
     const contextEl = row.querySelector('.occ-context');
     if (contextEl) applyContextMarkup(contextEl, occ);
-    const bboxStatusEl = row.querySelector('.occ-bbox-status');
-    if (bboxStatusEl) applyBboxStatus(bboxStatusEl, occ);
   });
 }
 
