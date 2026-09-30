@@ -15,8 +15,10 @@
   <h1>Prakrit Dictionary Engine<small>Entry &amp; Citation Review</small></h1>
   <button id="openDictBtn">Open Dictionary JSON…</button>
   <button id="saveDictBtn" class="primary" disabled>Save Dictionary</button>
-  <input id="jumpBox" list="wordList" placeholder="Jump to word…" autocomplete="off">
-  <datalist id="wordList"></datalist>
+  <div class="jump-wrap">
+    <input id="jumpBox" placeholder="Jump to word…" autocomplete="off">
+    <div id="jumpList" hidden></div>
+  </div>
   <div class="spacer"></div>
   <span id="status"></span>
 </header>

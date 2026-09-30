@@ -66,7 +66,7 @@ const el = id => document.getElementById(id);
 const openDictBtn = el('openDictBtn');
 const saveDictBtn = el('saveDictBtn');
 const jumpBox = el('jumpBox');
-const wordList = el('wordList');
+const jumpList = el('jumpList');
 const statusEl = el('status');
 
 const entryWrap = el('entryWrap');
@@ -191,16 +191,114 @@ window.addEventListener('beforeunload', e => {
   if (dictDirty){ e.preventDefault(); e.returnValue=''; }
 });
 
+// Jump-to-word dropdown. A native <datalist> caps how many suggestions the
+// browser shows, so this is a custom scrollable list that renders the full
+// (substring-filtered) word list in chunks as you scroll.
+const JUMP_CHUNK = 200;
+let jumpMatches = [];   // words matching the current text
+let jumpShown = 0;      // how many of jumpMatches are rendered
+let jumpActive = -1;    // keyboard-highlighted row (index into jumpMatches)
+
 function populateWordList(){
-  wordList.innerHTML = '';
-  const frag = document.createDocumentFragment();
-  for (const w of words){
-    const opt = document.createElement('option');
-    opt.value = w;
-    frag.appendChild(opt);
-  }
-  wordList.appendChild(frag);
+  if (document.activeElement === jumpBox) refreshJumpList(); else closeJumpList();
 }
+
+function closeJumpList(){
+  jumpList.hidden = true;
+  jumpActive = -1;
+}
+
+function renderJumpChunk(){
+  const frag = document.createDocumentFragment();
+  const end = Math.min(jumpMatches.length, jumpShown + JUMP_CHUNK);
+  for (let i = jumpShown; i < end; i++){
+    const d = document.createElement('div');
+    d.className = 'jump-item';
+    d.dataset.i = i;
+    d.textContent = jumpMatches[i];
+    frag.appendChild(d);
+  }
+  jumpShown = end;
+  jumpList.appendChild(frag);
+}
+
+function refreshJumpList(){
+  const q = jumpBox.value.trim().toLowerCase();
+  jumpMatches = q ? words.filter(w => w.toLowerCase().includes(q)) : words;
+  jumpShown = 0;
+  jumpActive = -1;
+  jumpList.innerHTML = '';
+  if (words.length === 0){ jumpList.hidden = true; return; }
+  if (jumpMatches.length === 0){
+    jumpList.innerHTML = '<div class="jump-empty">No matching words</div>';
+  } else {
+    renderJumpChunk();
+    jumpList.insertAdjacentHTML('afterbegin',
+      `<div class="jump-count">${jumpMatches.length.toLocaleString()} word${jumpMatches.length === 1 ? '' : 's'}</div>`);
+  }
+  jumpList.scrollTop = 0;
+  jumpList.hidden = false;
+}
+
+function jumpToWord(w){
+  const idx = words.indexOf(w);
+  if (idx === -1){
+    updateStatus(`"${w}" not found in dictionary`, true);
+    return;
+  }
+  closeJumpList();
+  currentWordIndex = idx;
+  renderWord();
+  jumpBox.value = '';
+}
+
+function setJumpActive(i){
+  const items = jumpList.querySelectorAll('.jump-item');
+  if (jumpActive >= 0 && items[jumpActive]) items[jumpActive].classList.remove('active');
+  jumpActive = i;
+  const it = items[i];
+  if (it){ it.classList.add('active'); it.scrollIntoView({block: 'nearest'}); }
+}
+
+jumpBox.addEventListener('focus', refreshJumpList);
+jumpBox.addEventListener('input', refreshJumpList);
+jumpBox.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    if (jumpList.hidden) refreshJumpList();
+    e.preventDefault();
+    const n = jumpList.querySelectorAll('.jump-item').length;
+    if (!n) return;
+    let i = jumpActive + (e.key === 'ArrowDown' ? 1 : -1);
+    i = Math.max(0, Math.min(n - 1, i));
+    if (i >= jumpShown - 1 && jumpShown < jumpMatches.length) renderJumpChunk();
+    setJumpActive(i);
+  } else if (e.key === 'Enter'){
+    e.preventDefault();
+    const typed = jumpBox.value.trim();
+    if (jumpActive >= 0) jumpToWord(jumpMatches[jumpActive]);
+    else if (words.includes(typed)) jumpToWord(typed);
+    else if (jumpMatches.length === 1) jumpToWord(jumpMatches[0]);
+    else if (typed) updateStatus(`"${typed}" not found in dictionary`, true);
+  } else if (e.key === 'Escape'){
+    closeJumpList();
+    jumpBox.blur();
+  }
+});
+jumpList.addEventListener('scroll', () => {
+  if (jumpShown < jumpMatches.length &&
+      jumpList.scrollTop + jumpList.clientHeight >= jumpList.scrollHeight - 100){
+    renderJumpChunk();
+  }
+});
+// mousedown (not click) so it fires before the input's blur closes the list
+jumpList.addEventListener('mousedown', e => {
+  e.preventDefault();
+  const item = e.target.closest('.jump-item');
+  if (item) jumpToWord(jumpMatches[+item.dataset.i]);
+});
+document.addEventListener('mousedown', e => {
+  if (e.target !== jumpBox && !jumpList.contains(e.target)) closeJumpList();
+});
 
 // Occurrences in the word index don't carry a book name; it's file-level.
 function occBook(occ){
@@ -252,17 +350,6 @@ function updateLoadButtonLabels(){
     ? '✓ Tag data loaded — change…'
     : 'Load Tag Data…';
 }
-
-jumpBox.addEventListener('change', () => {
-  const idx = words.indexOf(jumpBox.value.trim());
-  if (idx === -1){
-    updateStatus(`"${jumpBox.value.trim()}" not found in dictionary`, true);
-    return;
-  }
-  currentWordIndex = idx;
-  renderWord();
-  jumpBox.value = '';
-});
 
 // ================= entry rendering =================
 function renderWord(){
